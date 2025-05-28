@@ -702,20 +702,65 @@ static NSObject<CallKeepPushDelegate>* _delegate;
 - (void)configureAudioSession
 {
 #ifdef DEBUG
-    NSLog(@"[CallKeep][configureAudioSession] Activating audio session");
+  NSLog(@"[CallKeep][configureAudioSession] Activating audio session");
 #endif
-    
-    AVAudioSession* audioSession = [AVAudioSession sharedInstance];
-    [audioSession setCategory:AVAudioSessionCategoryPlayAndRecord withOptions:AVAudioSessionCategoryOptionAllowBluetooth error:nil];
-    
-    [audioSession setMode:AVAudioSessionModeVoiceChat error:nil];
-    
-    double sampleRate = 44100.0;
-    [audioSession setPreferredSampleRate:sampleRate error:nil];
-    
-    NSTimeInterval bufferDuration = .01;
-    [audioSession setPreferredIOBufferDuration:bufferDuration error:nil];
-    [audioSession setActive:TRUE error:nil];
+ 
+ 
+  AVAudioSession *session = [AVAudioSession sharedInstance];
+
+   // Nếu đã active thì không cần gọi lại nữa
+   if (session.isOtherAudioPlaying || session.isInputAvailable == NO) {
+     NSLog(@"[Audio] session not suitable for activation");
+     return;
+   }
+
+   NSError *error = nil;
+
+   BOOL success = [session setCategory:AVAudioSessionCategoryPlayAndRecord
+                withOptions:(AVAudioSessionCategoryOptionAllowBluetooth)
+                   error:&error];
+   if (!success) {
+     NSLog(@"[Audio] Failed to set category: %@", error);
+     return;
+   }
+
+   success = [session setPreferredSampleRate:44100 error:&error];
+   if (!success) {
+     NSLog(@"[Audio] Failed to set sample rate: %@", error);
+     return;
+   }
+
+   success = [session setPreferredIOBufferDuration:0.01 error:&error];
+   if (!success) {
+     NSLog(@"[Audio] Failed to set IO buffer duration: %@", error);
+     return;
+   }
+
+   success = [session setActive:YES withOptions:AVAudioSessionSetActiveOptionNotifyOthersOnDeactivation error:&error];
+   if (!success) {
+     NSLog(@"[Audio] Failed to activate audio session: %@", error);
+     return;
+   }
+
+   NSLog(@"[Audio] Audio session configured successfully");
+ 
+}
+
+- (void)resetAudio {
+  AVAudioSession *session = [AVAudioSession sharedInstance];
+  NSError *error = nil;
+ 
+  if ([session isOtherAudioPlaying]) {
+    NSLog(@"[Audio] Cannot deactivate session: other audio is playing");
+    return;
+  }
+ 
+  BOOL success = [session setActive:NO error:&error];
+  if (!success) {
+    NSLog(@"[Audio] Error deactivating session: %@", error);
+  } else {
+    NSLog(@"[Audio] Audio session deactivated successfully");
+  }
 }
 
 + (BOOL)application:(UIApplication *)application
@@ -857,6 +902,10 @@ continueUserActivity:(NSUserActivity *)userActivity
 #endif
     [self sendEventWithNameWrapper:CallKeepPerformEndCallAction body:@{ @"callUUID": [action.callUUID.UUIDString lowercaseString] }];
     [action fulfill];
+
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        [self resetAudio];
+    });
 }
 
 -(void)provider:(CXProvider *)provider performSetHeldCallAction:(CXSetHeldCallAction *)action
