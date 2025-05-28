@@ -713,7 +713,7 @@ static NSObject<CallKeepPushDelegate>* _delegate;
     double sampleRate = 44100.0;
     [audioSession setPreferredSampleRate:sampleRate error:nil];
     
-    NSTimeInterval bufferDuration = .005;
+    NSTimeInterval bufferDuration = .01;
     [audioSession setPreferredIOBufferDuration:bufferDuration error:nil];
     [audioSession setActive:TRUE error:nil];
 }
