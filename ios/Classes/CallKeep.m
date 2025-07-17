@@ -708,11 +708,7 @@ static NSObject<CallKeepPushDelegate>* _delegate;
  
   AVAudioSession *session = [AVAudioSession sharedInstance];
 
-   // Nếu đã active thì không cần gọi lại nữa
-   if (session.isOtherAudioPlaying || session.isInputAvailable == NO) {
-     NSLog(@"[Audio] session not suitable for activation");
-     return;
-   }
+   // after answer call. always call setActive.
 
    NSError *error = nil;
 
