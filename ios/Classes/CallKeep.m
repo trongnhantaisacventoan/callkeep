@@ -15,6 +15,7 @@
     NSOperatingSystemVersion _version;
     bool _hasListeners;
     NSMutableArray *_delayedEvents;
+    NSMutableDictionary *_ignoreCall;
 }
 
 - (FlutterMethodChannel *)eventChannel
@@ -40,6 +41,12 @@ static NSObject<CallKeepPushDelegate>* _delegate;
         _delayedEvents = [NSMutableArray array];
     }
     return self;
+}
+
+- (void)initIgnoreCallIfCan {
+    if(_ignoreCall == nil) {
+        _ignoreCall = [NSMutableDictionary new];
+    }
 }
 
 + (id)allocWithZone:(NSZone *)zone {
@@ -251,6 +258,21 @@ static NSObject<CallKeepPushDelegate>* _delegate;
     [dict setObject:fromNumber forKey:@"from_number"];
     [dict setObject:toNumber forKey:@"to_number"];
     
+    
+    NSInteger callCount = self.callKeepCallController.callObserver.calls.count;
+    NSLog(@"[CallKeep][TIENTH] >>>> currentCall: %ld", callCount);
+    
+    if(callCount >= 1) {
+        dict[@"need_ignore"] = @(1);
+        [self initIgnoreCallIfCan];
+        NSString *uuidLowercase = [uuid lowercaseString];
+        _ignoreCall[uuidLowercase] = uuidLowercase;
+        
+        NSLog(@"[CallKeep][TIENTH] need Ignore Call by uuid: %@", uuid);
+    }
+    
+    __weak typeof(self) weakSelf = self;
+    
     [CallKeep reportNewIncomingCall:uuid
                              handle:@"push_notification"
                          handleType:@"generic"
@@ -258,9 +280,19 @@ static NSObject<CallKeepPushDelegate>* _delegate;
                          callerName:fromNumber
                         fromPushKit:YES
                             payload:dic
-              withCompletionHandler:completion];
+              withCompletionHandler:^{
+        completion();
+        if(callCount >= 1) {
+            NSLog(@"[CallKeep][TIENTH] End call by callKeepCallController with uuid: %@", uuid);
+            [weakSelf endCall:uuid];
+        }
+    }];
     
-    [self sendEventWithNameWrapper:CallKeepReceivedPushNotification body:dict];
+    
+    if(callCount < 1) {
+        [self sendEventWithNameWrapper:CallKeepReceivedPushNotification body:dict];
+    }
+    
 }
 
 - (void)pushRegistry:(PKPushRegistry *)registry didReceiveIncomingPushWithPayload:(PKPushPayload *)payload forType:(NSString *)type {
@@ -584,6 +616,16 @@ static NSObject<CallKeepPushDelegate>* _delegate;
     callUpdate.localizedCallerName = callerName;
     
     [sharedProvider reportNewIncomingCallWithUUID:uuid update:callUpdate completion:^(NSError * _Nullable error) {
+        
+        BOOL needIgnore = [payload[@"need_ignore"] boolValue];
+        if(needIgnore) {
+            if (completion != nil) {
+                completion();
+            }
+            [CallKeep endCallWithUUID:uuidString reason:2];
+            return;
+        }
+        
         CallKeep *callKeep = [CallKeep allocWithZone: nil];
         [callKeep sendEventWithNameWrapper:CallKeepDidDisplayIncomingCall body:@{
             @"error": error && error.localizedDescription ? error.localizedDescription : @"",
@@ -893,6 +935,14 @@ continueUserActivity:(NSUserActivity *)userActivity
 // Ending incoming call
 - (void)provider:(CXProvider *)provider performEndCallAction:(CXEndCallAction *)action
 {
+    
+    NSString *uuidEndCall = [action.callUUID.UUIDString lowercaseString];
+    NSString *uuidIgnore = _ignoreCall[uuidEndCall];
+    if(uuidIgnore && [uuidIgnore isEqualToString:uuidEndCall]) {
+        NSLog(@"[CallKeep][TIENTH] Ignore event End Call to flutter uuid: %@", uuidEndCall);
+        return;
+    }
+    
 #ifdef DEBUG
     NSLog(@"[CallKeep][CXProviderDelegate][provider:performEndCallAction]");
 #endif
@@ -979,3 +1029,4 @@ continueUserActivity:(NSUserActivity *)userActivity
 }
 
 @end
+
